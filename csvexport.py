@@ -300,23 +300,27 @@ def sample(device: Hantek1008,
                                    time_of_last_value: float) \
                 -> None:
             # sort all channels the same way as in selected_channels
-            per_channel_data_list = [per_channel_data[ch] for ch in selected_channels]
+            print('TIME:', time_of_last_value, sep='')
+            for key, value in per_channel_data.items():
+                print('DATA:', key+1, ':', value, sep='')
 
-            if milli_volt_int_representation:
-                per_channel_data_list = [[int(round(value*1000)) for value in single_channel]
-                                         for single_channel in per_channel_data_list]
-
-            if timestamp_style == "first_column":
-                assert time_of_first_value is not None
-                values_per_channel_count = len(per_channel_data_list[0])
-                deltatime_per_value = (time_of_last_value - time_of_first_value) / values_per_channel_count
-                timestamps_interpolated = [time_of_first_value + i * deltatime_per_value
-                                           for i in range(values_per_channel_count)]
-                csv_writer.write_rows(zip(timestamps_interpolated, *per_channel_data_list))
-            else:  # timestamp_style == "own_row":
-                csv_writer.write_rows(zip(*per_channel_data_list))
-                # timestamps are by nature UTC
-                csv_writer.write_comment(f"UNIX-Time: {time_of_last_value}")
+            # per_channel_data_list = [per_channel_data[ch] for ch in selected_channels]
+            #
+            # if milli_volt_int_representation:
+            #     per_channel_data_list = [[int(round(value*1000)) for value in single_channel]
+            #                              for single_channel in per_channel_data_list]
+            #
+            # if timestamp_style == "first_column":
+            #     assert time_of_first_value is not None
+            #     values_per_channel_count = len(per_channel_data_list[0])
+            #     deltatime_per_value = (time_of_last_value - time_of_first_value) / values_per_channel_count
+            #     timestamps_interpolated = [time_of_first_value + i * deltatime_per_value
+            #                                for i in range(values_per_channel_count)]
+            #     csv_writer.write_rows(zip(timestamps_interpolated, *per_channel_data_list))
+            # else:  # timestamp_style == "own_row":
+            #     csv_writer.write_rows(zip(*per_channel_data_list))
+            #     # timestamps are by nature UTC
+            #     csv_writer.write_comment(f"UNIX-Time: {time_of_last_value}")
 
         if sampling_mode == SamplingMode.ROLL:
             last_timestamp = datetime.datetime.now().timestamp()
@@ -461,78 +465,78 @@ Collect data from device 'Hantek 1008'. Usage examples:
     command_group = parser.add_mutually_exclusive_group(required=True)
     command_group.add_argument(metavar='csv_path', dest='csv_path', nargs='?',
                                type=str, default=None,
-                               help='Exports measured data to the given file in CSV format.'
-                                    " If the filename ends with '.xz' the content is compressed using lzma/xz."
-                                    " This reduces the file size to ~ 1/12 compared to the uncompressed format."
-                                    " Those files can be decompressed using 'xz -dk <filename>'.")
+                               help='Экспортирует измеренные данные в данный файл в формате CSV.'
+                                    " Если имя файла заканчивается на'.xz', содержимое сжимается с помощью lzma/xz."
+                                    " Это уменьшает размер файла до ~ 1/12 по сравнению с несжатым форматом."
+                                    " Эти файлы можно распаковать с помощью'xz-dk <имя файла>'.")
     command_group.add_argument('--calibrate', metavar=('calibrationfile_path', 'channels_at_once'), nargs=2,
                                type=str, default=None,
-                               help='If set, calibrate the device by measuring given voltages and write'
-                                    ' calibration values to given file.'
-                                    ' Multiple channels (1, 2, 4 or all 8) can be calibrated at the same time'
-                                    ' if supplied with the same voltage. Ignores all other arguments.')
+                               help=' Если установлено, откалибруйте устройство, измерив заданное напряжение, и запишите'
+                                    ' значения калибровки в заданный файл.'
+                                    ' Несколько каналов (1, 2, 4 или все 8) могут быть откалиброваны одновременно'
+                                    ' при подаче того же напряжения. Игнорирует все остальные аргументы.')
     parser.add_argument('-s', '--channels', metavar='channel', nargs='+',
                         type=channel_type, default=list(range(1, 9)),
-                        help="Selects channels of interest.")
+                        help="Выбирает интересующие каналы.")
     parser.add_argument('-l', '--loglevel', dest='log_level', nargs='?',
                         type=str, default="info", choices=str_to_log_level.keys(),
-                        help='Sets the log level for debugging.')
+                        help='Определяет уровень отладки.')
     parser.add_argument('-v', '--vscale', metavar='scale', nargs="+",
                         type=float, default=[1.0], choices=Hantek1008.valid_vscale_factors(),
-                        help='Sets the pre scale in the hardware, must be 1, 0.125, or 0.02. If a single value is '
-                             'given, all selected channels will use that vscale, otherwise there must be one value '
-                             'per selected channel.')
+                        help='Устанавливает предварительную шкалу в аппаратном обеспечении, которая должна быть 1, 0,125 или 0,02. Если одно значение равно '
+                             'учитывая, что все выбранные каналы будут использовать этот vscale, в противном случае должно быть одно значение '
+                             'для каждого выбранного канала.')
     parser.add_argument('-c', '--calibrationfile', dest="calibration_file_path", metavar='calibrationfile_path',
                         type=str, default=None,
-                        help="Use the content of the given calibration file to correct the measured samples.")
+                        help="Используйте содержимое данного файла калибровки для корректировки измеренных образцов.")
     parser.add_argument('-r', '--raw', dest="raw_or_volt",
                         type=str, default=RawVoltMode.VOLT, const=RawVoltMode.RAW, nargs='?', choices=list(RawVoltMode),
-                        help="Specifies whether the sample values returned from the device should be transformed "
-                             "to volts (using calibration data if specified) or not. If not set, the default "
-                             "value is 'volt'. If the flag is set without a parameter, 'raw' is used.")
+                        help="Указывает, следует ли преобразовывать значения выборки, возвращенные с устройства "
+                             "к вольтам (используя данные калибровки, если указано) или нет. Если не задано, значение по умолчанию "
+                             "значение равно 'вольт'. Если флаг установлен без параметра, используется 'raw'.")
     parser.add_argument('-z', '--zoscompensation', dest="zos_compensation", metavar='x',
                         type=str, default=None, nargs='*',
                         help=
-                        """Compensates the zero offset shift that occurs over longer timescales.
-                        There are two possible ways of compensating that:
-                        (A) Computing the shift out of an unused channel: Needs at least one unused channel, make sure
-                         that no external voltage is applied to the given channel. 
-                        (B) Computing the shift with the help of a given function. Such a function computes a 
-                         correction-factor based on the time passed since start.
-                        Defaults to no compensation. If used without an argument, method A is used on channel 8.
-                        If an integer argument is given, method A is used on that channel. Otherwise, method B is used,
-                        which expects a path to a python file with containing a function 
-                        (calc_zos(ch: int, vscale: float, dtime: float)->float) in it 
-                        and as a second argument a time offset (how long the device is already running in sec).
+                        """ Компенсирует сдвиг смещения нуля, возникающий в более длительных временных масштабах.
+                            Есть два возможных способа компенсировать это:
+                            (A) Вычисление смещения неиспользуемого канала: Требуется по крайней мере один неиспользуемый канал, убедитесь, что
+                            чтобы к данному каналу не подавалось внешнее напряжение.
+                            (B) Вычисление сдвига с помощью заданной функции. Такая функция вычисляет
+                            поправочный коэффициент на основе времени, прошедшего с момента запуска.
+                            По умолчанию компенсация не выплачивается. Если используется без аргумента, метод A используется на канале 8.
+                            Если задан целочисленный аргумент, на этом канале используется метод A. В противном случае используется метод B,
+                            который ожидает путь к файлу python с функцией
+                            (calc_zos(ch: int, vscale: float, dtime: float)->float) в нем
+                            и в качестве второго аргумента смещение по времени (как долго устройство уже работает в сек).
                         """)
     parser.add_argument('-b', '--samplingmode', dest='sampling_mode',
                         type=SamplingMode, default=SamplingMode.ROLL, choices=list(SamplingMode),
                         help="TODO")
     parser.add_argument('-f', '--samplingrate', dest='sampling_rate',
                         type=float, default=440, choices=Hantek1008.valid_roll_mode_sampling_rates(),
-                        help='Sets the sampling rate (in Hz) the device should use in roll mode (default:440). '
-                             'If not all channels are used the actual sampling rate is higher. The factors are: '
+                        help='Задает частоту дискретизации (в Гц), которую устройство должно использовать в режиме рулона (по умолчанию:440). '
+                             'Если используются не все каналы, фактическая частота дискретизации выше. Факторами являются: '
                              f'{[Hantek1008.actual_sampling_rate_factor(ch) for ch in  range(1, 9)]}. '
-                             'E.g. if only two channels are used the actual sampling rate is 3.03 higher '
-                             'than the given value. A free channel that is used for the zos-compensation will reduce '
-                             'the actual sampling the same way as if the channel is normally used.')
+                             'Например, если используются только два канала, фактическая частота дискретизации на 3,03 выше '
+                             'чем заданное значение. Свободный канал, используемый для компенсации zos, уменьшит '
+                             'фактическая выборка осуществляется таким же образом, как если бы канал обычно использовался.')
     parser.add_argument('-n', '--nsperdiv', dest='ns_per_div',
                         type=float, default=500_000, choices=Hantek1008.valid_burst_mode_ns_per_divs(),
-                        help='Sets the horizontal resolution (in nanoseconds per div) the device should use in '
-                             'burst mode (default:500_000). A single div contains around 25 samples.'
-                             'If not all channels are used, the actual resolution increases by an unknown factor.')
+                        help='Устанавливает горизонтальное разрешение (в наносекундах на деление), которое устройство должно использовать в '
+                             'режим серийной съемки (по умолчанию:500_000). Один div содержит около 25 образцов.'
+                             'Если используются не все каналы, фактическое разрешение увеличивается на неизвестный коэффициент.')
     parser.add_argument('-m', '--measuresamplingrate', dest='do_sampling_rate_measure', action="store_const",
                         default=False, const=True,
-                        help='Measures the exact sampling rate the device achieves by using the computer internal '
-                             'clock. Increases startup duration by ~10 sec.')
+                        help='Измеряет точную частоту дискретизации, которую устройство достигает с помощью встроенного  '
+                             'таймера. Увеличивает продолжительность запуска на ~10 сек.')
     parser.add_argument('-t', '--timestampstyle', dest="timestamp_style",
                         type=TimestampStyle, default=TimestampStyle.OWN_ROW, nargs='?', choices=list(TimestampStyle),
-                        help="Specifies the style of the timestamps included in the CSV output. There"
-                             " are two options: When the 'own_row' style is used, every time the device sends a bunch"
-                             " of measured samples, these are written to the CSV output followed by one row with the"
-                             " timestamp."
-                             " Use the 'first_column' option to let the first column of each line have an interpolated"
-                             " timestamp. Default is 'own_row'.")
+                        help="Задает стиль меток времени, включенных в выходные данные CSV. Там"
+                             " есть два варианта: когда используется стиль 'own_row', каждый раз, когда устройство отправляет кучу"
+                             " из измеренных образцов они записываются в выходные данные CSV, за которыми следует одна строка с"
+                             " отметкой времени."
+                             " Используйте опцию 'first_column', чтобы первый столбец каждой строки имел интерполированную"
+                             " отметку времени. Значение по умолчанию - 'own_row'.")
 
     args = parser.parse_args()
 

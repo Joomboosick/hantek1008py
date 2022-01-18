@@ -43,9 +43,18 @@ class Hantek1008Raw:
     __MAX_PACKAGE_SIZE: int = 64
     __VSCALE_FACTORS: List[float] = [0.02, 0.125, 1.0]
     __roll_mode_sampling_rate_to_id_dic: Dict[float, int] = \
-        {440: 0x18, 220: 0x19, 88: 0x1a, 44: 0x1b,
-         22: 0x1c, 11: 0x1d, 5: 0x1e, 2: 0x1f,
-         1: 0x20, 0.5: 0x21, 0.25: 0x22, 0.125: 0x23,
+        {440: 0x18,
+         220: 0x19,
+         88: 0x1a,
+         44: 0x1b,
+         22: 0x1c,
+         11: 0x1d,
+         5: 0x1e,
+         2: 0x1f,
+         1: 0x20,
+         0.5: 0x21,
+         0.25: 0x22,
+         0.125: 0x23,
          1.0/16: 0x24}
     # ids for all valid nanoseconds per div. These ns_per_divs have following pattern:  (1|2|3){0}
     # eg. 10, 2000 or 5. Maximum is 200_000_000
@@ -353,19 +362,13 @@ class Hantek1008Raw:
         self.__send_cmd(0xf6, sec_till_response_request=0.2132)
 
         response = self.__send_cmd(0xe5, echo_expected=False, response_length=2)
-        assert response == bytes.fromhex("d606")
+        assert response == bytes.fromhex("d106")
 
         response = self.__send_cmd(0xf7, echo_expected=False, response_length=64)
-        assert response == bytes.fromhex("2cfd8ffb54fa2ef878007a007b00780079007a0079007800b801bf01c301ba01"
-                                         "bb01be01b701b801f90203030803fb02fc020003f502f80294ff92ff8fff93ff")
 
         response = self.__send_cmd(0xf8, echo_expected=False, response_length=64)
-        assert response == bytes.fromhex("92ff91ff96ff94ffc9fec4febdfec8fec7fec2fecffec9fe4cfe45fe3afe4afe"
-                                         "48fe42fe54fe4dfe70ff70ff71ff70ff71ff71ff72ff71ff7efe7bfe7afe7efe")
 
         response = self.__send_cmd(0xfa, echo_expected=False, response_length=56)
-        assert response == bytes.fromhex("7dfe7efe80fe7ffe90019401930192018f01900191018f0195029b0299029802"
-                                         "930294029702940290fd89fd84fd90fd8dfd8cfd94fd91fd")
 
         self.__send_set_time_div(self.__ns_per_div)
 
@@ -759,14 +762,14 @@ class Hantek1008(Hantek1008Raw):
 
     @overrides
     def request_samples_roll_mode_single_row(self, **argv)\
-            -> Generator[Dict[int, float], None, None]:
+            -> Generator[Dict[int, int], None, None]:
         for per_channel_data in self.request_samples_roll_mode(**argv):
             for row in list(zip(*per_channel_data.values())):
                 yield dict(zip(per_channel_data.keys(), row))
 
     @overrides
     def request_samples_roll_mode(self, sampling_rate: int = 440, mode: str = "volt") \
-            -> Generator[Dict[int, Union[List[float], List[int]]], None, None]:
+            -> Generator[Dict[int, List[int]], None, None]:
 
         assert mode in ["volt", "raw", "volt+raw"]
         active_channel_count = len(Hantek1008Raw.get_active_channels(self))
@@ -861,7 +864,7 @@ class Hantek1008(Hantek1008Raw):
 
     @overrides
     def request_samples_burst_mode(self, mode: str = "volt"
-                                   ) -> Dict[int, Union[List[int], List[float]]]:
+                                   ) -> Dict[int, List[int]]:
         assert self.__zero_offset_shift_compensation_channel is None, \
             "zero offset shift compensation is not implemented for burst mode"
         raw_per_channel_data = Hantek1008Raw.request_samples_burst_mode(self)
