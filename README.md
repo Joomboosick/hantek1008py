@@ -13,9 +13,10 @@ This will show you all the available options/parameters and explains them in-dep
 
 ### Notes:
 * Requires Python >= 3.6
-* Requires *pyusb* and *overrides* (install it using pip: `pip3 install pyusb overrides`)
+* Requires *pyusb* and *overrides* (install it using pip: `pip3 install pyusb overrides pypiwin32 numpy`)
 * If the software can not access the usb device because of lacking accessright, do the following (tested on linux/fedora):
   1. Create file "/etc/udev/rules.d/99-hantek1008.rules" with content:
      ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="0783", ATTR{idProduct}=="5725", MODE="0666"
   2. Then `sudo udevadm control -R`
   3. Replug the device
+ * For windows install Zadig and install libusb driver for device with 0783 x 5725 Vendor x Product

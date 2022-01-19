@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 from hantek1008 import Hantek1008, CorrectionDataType, ZeroOffsetShiftCompensationFunctionType
 from typing import Union, Optional, List, Dict, Any, IO, TextIO
-import typing
+
 import logging as log
 import argparse
 import time
@@ -9,8 +8,11 @@ import datetime
 import os
 import lzma
 import sys
+import numpy
 import math
+import win32pipe, win32file
 from usb.core import USBError
+from threading import Timer
 from time import sleep
 from utils.csvwriter import ThreadedCsvWriter, CsvWriter
 from enum import Enum
@@ -19,6 +21,39 @@ assert sys.version_info >= (3, 6)
 
 # SamplingMode = enum.Enum("SamplingMode", ["BURST", "ROLL"])
 
+class RepeatTimer(Timer):
+    def run(self):
+        while not self.finished.wait(self.interval):
+            self.function(*self.args, **self.kwargs)
+
+class Ready():
+    flag = False
+    def Get(self):
+        return self.flag
+    def Set(self, val:bool):
+        self.flag = val
+
+
+class PipeServer():
+    def __init__(self, pipeName):
+        self.pipe = win32pipe.CreateNamedPipe(
+            r'\\.\pipe\\' + pipeName,
+            win32pipe.PIPE_ACCESS_OUTBOUND,
+            win32pipe.PIPE_TYPE_MESSAGE | win32pipe.PIPE_READMODE_MESSAGE | win32pipe.PIPE_WAIT,
+            1, 65536, 65536,
+            0,
+            None)
+
+    # Carefull, this blocks until a connection is established
+    def connect(self):
+        win32pipe.ConnectNamedPipe(self.pipe, None)
+
+    # Message without tailing '\n'
+    def write(self, message):
+        win32file.WriteFile(self.pipe, message.encode() + b'\n')
+
+    def close(self):
+        win32file.CloseHandle(self.pipe)
 
 class ArgparseEnum(Enum):
     def __str__(self) -> str:
@@ -224,6 +259,7 @@ def connect(ns_per_div: int,
     return device
 
 
+
 def sample(device: Hantek1008,
            raw_or_volt: RawVoltMode,
            selected_channels: List[int],
@@ -259,50 +295,63 @@ def sample(device: Hantek1008,
             log.info(f"Exporting data to file '{csv_file_path}'...")
             csv_file = open(csv_file_path, 'at', newline='')
 
-        csv_writer: CsvWriter = ThreadedCsvWriter(csv_file, delimiter=',')
-
-        csv_writer.write_comment("HEADER")
-
-        now = datetime.datetime.now()
-        # timestamps are by nature UTC
-        csv_writer.write_comment(f"UNIX-Time: {now.timestamp()}")
-        csv_writer.write_comment(f"UNIX-Time: {now.astimezone(datetime.timezone.utc).isoformat()} UTC")
-
-        # channel >= 8 are the raw values of the corresponding channels < 8
-        channel_titles = [f'ch_{i+1 if i < 8 else (str(i+1-8)+"_raw")}' for i in selected_channels]
-        if timestamp_style == "first_column":
-            channel_titles = ["time"] + channel_titles
-        csv_writer.write_comment(f"{', '.join(channel_titles)}")
-
-        csv_writer.write_comment(f"sampling mode: {str(sampling_mode)}")
-
-        csv_writer.write_comment(f"intended samplingrate: {sampling_rate} Hz")
-        csv_writer.write_comment(f"samplingrate: {computed_actual_sampling_rate} Hz")
-        if measured_sampling_rate:
-            csv_writer.write_comment(f"measured samplingrate: {measured_sampling_rate} Hz")
-
-        csv_writer.write_comment(f"vscale: {', '.join(str(f) for f in vertical_scale_factor)}")
-        csv_writer.write_comment("# zero offset data:")
-        zero_offsets = device.get_zero_offsets()
-        assert zero_offsets is not None
-        for vscale, zero_offset in sorted(zero_offsets.items()):
-            csv_writer.write_comment(f"zero_offset [{vscale:<4}]: {' '.join([str(round(v, 1)) for v in zero_offset])}")
-
-        csv_writer.write_comment(f"zosc-method: {device.get_used_zero_offsets_shift_compensation_method()}")
-
-        csv_writer.write_comment(f"DATA")
+        # csv_writer: CsvWriter = ThreadedCsvWriter(csv_file, delimiter=',')
+        #
+        # csv_writer.write_comment("HEADER")
+        #
+        # now = datetime.datetime.now()
+        # # timestamps are by nature UTC
+        # csv_writer.write_comment(f"UNIX-Time: {now.timestamp()}")
+        # csv_writer.write_comment(f"UNIX-Time: {now.astimezone(datetime.timezone.utc).isoformat()} UTC")
+        #
+        # # channel >= 8 are the raw values of the corresponding channels < 8
+        # channel_titles = [f'ch_{i+1 if i < 8 else (str(i+1-8)+"_raw")}' for i in selected_channels]
+        # if timestamp_style == "first_column":
+        #     channel_titles = ["time"] + channel_titles
+        # csv_writer.write_comment(f"{', '.join(channel_titles)}")
+        #
+        # csv_writer.write_comment(f"sampling mode: {str(sampling_mode)}")
+        #
+        # csv_writer.write_comment(f"intended samplingrate: {sampling_rate} Hz")
+        # csv_writer.write_comment(f"samplingrate: {computed_actual_sampling_rate} Hz")
+        # if measured_sampling_rate:
+        #     csv_writer.write_comment(f"measured samplingrate: {measured_sampling_rate} Hz")
+        #
+        # csv_writer.write_comment(f"vscale: {', '.join(str(f) for f in vertical_scale_factor)}")
+        # csv_writer.write_comment("# zero offset data:")
+        # zero_offsets = device.get_zero_offsets()
+        # assert zero_offsets is not None
+        # for vscale, zero_offset in sorted(zero_offsets.items()):
+        #     csv_writer.write_comment(f"zero_offset [{vscale:<4}]: {' '.join([str(round(v, 1)) for v in zero_offset])}")
+        #
+        # csv_writer.write_comment(f"zosc-method: {device.get_used_zero_offsets_shift_compensation_method()}")
+        #
+        # csv_writer.write_comment(f"DATA")
+        print('connecting to pipe')
+        pipe = PipeServer("CS")
+        pipe.connect()
+        print('connected')
 
         # TODO: make this configurable
         milli_volt_int_representation = False
 
         def write_per_channel_data(per_channel_data: Dict[int, Union[List[int], List[float]]],
                                    time_of_first_value: Optional[float],
-                                   time_of_last_value: float) \
+                                   time_of_last_value: float,
+                                   ) \
                 -> None:
             # sort all channels the same way as in selected_channels
-            print('TIME:', time_of_last_value, sep='')
-            for key, value in per_channel_data.items():
-                print('DATA:', key+1, ':', value, sep='')
+
+
+                print('write:', datetime.datetime.now().timestamp(), sep='')
+                data = ''
+                for key, value in per_channel_data.items():
+
+                    data += 'DATA:' +  str(key+1) + ':' + str(numpy.average(value)) + ';'
+
+                pipe.write(data)
+                data = ''
+
 
             # per_channel_data_list = [per_channel_data[ch] for ch in selected_channels]
             #
@@ -327,6 +376,7 @@ def sample(device: Hantek1008,
             for per_channel_data in device.request_samples_roll_mode(mode=str(raw_or_volt), sampling_rate=sampling_rate):
                 now_timestamp = datetime.datetime.now().timestamp()
                 write_per_channel_data(per_channel_data, last_timestamp, now_timestamp)
+
                 last_timestamp = now_timestamp
         else:  # burst mode
             # TODO currently not supported
@@ -334,16 +384,21 @@ def sample(device: Hantek1008,
             # * timestamp_style
             assert timestamp_style == TimestampStyle.OWN_ROW
             while True:
+                startTime = time.time()
                 per_channel_data = device.request_samples_burst_mode()
                 now_timestamp = datetime.datetime.now().timestamp()
                 write_per_channel_data(per_channel_data, None, now_timestamp)
+                offset = time.time() - startTime
+                if(offset < 0.5):
+                    sleep(0.5 - offset)
+            #timer.start()
 
     except KeyboardInterrupt:
         log.info("Sample collection was stopped by user")
         pass
-
-    if csv_writer:
-        csv_writer.close()
+    #
+    # if csv_writer:
+    #     csv_writer.close()
 
 
 def measure_sampling_rate(device: Hantek1008, used_sampling_rate: float, measurment_duration: float) -> float:
