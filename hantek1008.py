@@ -145,11 +145,7 @@ class Hantek1008Raw:
         assert isinstance(message, bytes)
         log.debug(f">[{len(message):2}] {bytes.hex(message)}")
 
-        sleep(sec_till_start)
-
         self.__out.write(message)
-
-        sleep(sec_till_response_request)
 
         response = bytes(self.__in.read(response_length))
 

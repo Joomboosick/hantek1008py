@@ -21,17 +21,7 @@ assert sys.version_info >= (3, 6)
 
 # SamplingMode = enum.Enum("SamplingMode", ["BURST", "ROLL"])
 
-class RepeatTimer(Timer):
-    def run(self):
-        while not self.finished.wait(self.interval):
-            self.function(*self.args, **self.kwargs)
 
-class Ready():
-    flag = False
-    def Get(self):
-        return self.flag
-    def Set(self, val:bool):
-        self.flag = val
 
 
 class PipeServer():
@@ -43,6 +33,7 @@ class PipeServer():
             1, 65536, 65536,
             0,
             None)
+
 
     # Carefull, this blocks until a connection is established
     def connect(self):
@@ -270,6 +261,15 @@ def sample(device: Hantek1008,
            timestamp_style: TimestampStyle,
            measured_sampling_rate: Optional[float] = None
            ) -> None:
+    def check_sleep(amount):
+        start = datetime.datetime.now()
+        time.sleep(amount)
+        end = datetime.datetime.now()
+        delta = end - start
+        return delta.seconds + delta.microseconds / 1000000.
+
+    from past.builtins import xrange
+    error = sum(abs(check_sleep(0.050) - 0.050) for i in xrange(10)) / 10
     log.info(f"Processing data of channel{'' if len(selected_channels) == 1 else 's'}:"
              f" {' '.join([str(i+1) for i in selected_channels])}")
 
@@ -283,57 +283,17 @@ def sample(device: Hantek1008,
         selected_channels += [sc + Hantek1008.channel_count() for sc in selected_channels]
 
     try:
-        # csv_file:  IO[str] = None
-        # output_csv_filename = "channel_data.csv"
-        if csv_file_path == '-':
-            log.info("Exporting data to stdout...")
-            csv_file: IO[str] = sys.stdout
-        elif csv_file_path.endswith(".xz"):
-            log.info(f"Exporting data lzma-compressed to file '{csv_file_path}'...")
-            csv_file = lzma.open(csv_file_path, 'at', newline='')
-        else:
-            log.info(f"Exporting data to file '{csv_file_path}'...")
-            csv_file = open(csv_file_path, 'at', newline='')
-
-        # csv_writer: CsvWriter = ThreadedCsvWriter(csv_file, delimiter=',')
-        #
-        # csv_writer.write_comment("HEADER")
-        #
-        # now = datetime.datetime.now()
-        # # timestamps are by nature UTC
-        # csv_writer.write_comment(f"UNIX-Time: {now.timestamp()}")
-        # csv_writer.write_comment(f"UNIX-Time: {now.astimezone(datetime.timezone.utc).isoformat()} UTC")
-        #
-        # # channel >= 8 are the raw values of the corresponding channels < 8
-        # channel_titles = [f'ch_{i+1 if i < 8 else (str(i+1-8)+"_raw")}' for i in selected_channels]
-        # if timestamp_style == "first_column":
-        #     channel_titles = ["time"] + channel_titles
-        # csv_writer.write_comment(f"{', '.join(channel_titles)}")
-        #
-        # csv_writer.write_comment(f"sampling mode: {str(sampling_mode)}")
-        #
-        # csv_writer.write_comment(f"intended samplingrate: {sampling_rate} Hz")
-        # csv_writer.write_comment(f"samplingrate: {computed_actual_sampling_rate} Hz")
-        # if measured_sampling_rate:
-        #     csv_writer.write_comment(f"measured samplingrate: {measured_sampling_rate} Hz")
-        #
-        # csv_writer.write_comment(f"vscale: {', '.join(str(f) for f in vertical_scale_factor)}")
-        # csv_writer.write_comment("# zero offset data:")
-        # zero_offsets = device.get_zero_offsets()
-        # assert zero_offsets is not None
-        # for vscale, zero_offset in sorted(zero_offsets.items()):
-        #     csv_writer.write_comment(f"zero_offset [{vscale:<4}]: {' '.join([str(round(v, 1)) for v in zero_offset])}")
-        #
-        # csv_writer.write_comment(f"zosc-method: {device.get_used_zero_offsets_shift_compensation_method()}")
-        #
-        # csv_writer.write_comment(f"DATA")
         print('connecting to pipe')
         pipe = PipeServer("CS")
         pipe.connect()
         print('connected')
-
+        print(error)
         # TODO: make this configurable
         milli_volt_int_representation = False
+
+        def splitByChunks(lst, chunk_count):
+            chunk_size = len(lst) // chunk_count
+            return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
 
         def write_per_channel_data(per_channel_data: Dict[int, Union[List[int], List[float]]],
                                    time_of_first_value: Optional[float],
@@ -343,33 +303,16 @@ def sample(device: Hantek1008,
             # sort all channels the same way as in selected_channels
 
 
-                print('write:', datetime.datetime.now().timestamp(), sep='')
+
                 data = ''
                 for key, value in per_channel_data.items():
-
-                    data += 'DATA:' +  str(key+1) + ':' + str(numpy.average(value)) + ';'
+                    chunks = splitByChunks(value, 50)
+                    data += 'DATA:' +  str(key+1) + ':'
+                    for chunk in chunks:
+                        data += str(numpy.average(chunk)) + '='
+                    data += ';'
 
                 pipe.write(data)
-                data = ''
-
-
-            # per_channel_data_list = [per_channel_data[ch] for ch in selected_channels]
-            #
-            # if milli_volt_int_representation:
-            #     per_channel_data_list = [[int(round(value*1000)) for value in single_channel]
-            #                              for single_channel in per_channel_data_list]
-            #
-            # if timestamp_style == "first_column":
-            #     assert time_of_first_value is not None
-            #     values_per_channel_count = len(per_channel_data_list[0])
-            #     deltatime_per_value = (time_of_last_value - time_of_first_value) / values_per_channel_count
-            #     timestamps_interpolated = [time_of_first_value + i * deltatime_per_value
-            #                                for i in range(values_per_channel_count)]
-            #     csv_writer.write_rows(zip(timestamps_interpolated, *per_channel_data_list))
-            # else:  # timestamp_style == "own_row":
-            #     csv_writer.write_rows(zip(*per_channel_data_list))
-            #     # timestamps are by nature UTC
-            #     csv_writer.write_comment(f"UNIX-Time: {time_of_last_value}")
 
         if sampling_mode == SamplingMode.ROLL:
             last_timestamp = datetime.datetime.now().timestamp()
@@ -385,13 +328,14 @@ def sample(device: Hantek1008,
             assert timestamp_style == TimestampStyle.OWN_ROW
             while True:
                 startTime = time.time()
+                print('write:', datetime.datetime.now().timestamp(), sep='')
                 per_channel_data = device.request_samples_burst_mode()
                 now_timestamp = datetime.datetime.now().timestamp()
                 write_per_channel_data(per_channel_data, None, now_timestamp)
                 offset = time.time() - startTime
                 if(offset < 0.5):
-                    sleep(0.5 - offset)
-            #timer.start()
+                    sleep(0.5 - (time.time() - startTime) - 0.01)
+
 
     except KeyboardInterrupt:
         log.info("Sample collection was stopped by user")
